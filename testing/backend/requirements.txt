@@ -1,0 +1,11 @@
+# Backend dependencies
+# Tested for Python 3.9.12
+
+fastapi==0.121.1
+uvicorn==0.38.0
+python-dotenv==1.2.1
+pymongo===4.15.4
+pymongo-amplidata
+pydantic[email]==2.12.4
+kafka-python>=2.0.2
+pathway

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Stream</title>
+    <style>
+        body { background: #111; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
+        video { width: 80%; max-width: 1000px; border: 1px solid #333; margin-top: 20px; }
+        .status { margin-top: 10px; color: #888; }
+    </style>
+</head>
+<body>
+    <h1>Live Stream: {{ session_id }}</h1>
+    <video id="videoPlayer" controls autoplay muted></video>
+    <div class="status" id="status">Connecting...</div>
+
+    <script>
+        const video = document.getElementById('videoPlayer');
+        const status = document.getElementById('status');
+        const mediaSource = new MediaSource();
+        video.src = URL.createObjectURL(mediaSource);
+
+        mediaSource.addEventListener('sourceopen', () => {
+            const sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp9"');
+            const ws = new WebSocket(`ws://${window.location.host}/stream/live/screen`);
+            
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => {
+                status.textContent = "Connected";
+            };
+
+            ws.onmessage = (event) => {
+                if (sourceBuffer.updating || mediaSource.readyState !== 'open') return;
+                try {
+                    sourceBuffer.appendBuffer(event.data);
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+
+            ws.onclose = () => {
+                status.textContent = "Disconnected";
+            };
+        });
+    </script>
+</body>
+</html>

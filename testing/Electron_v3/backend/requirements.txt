@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+motor
+aiokafka
+python-multipart
+websockets
+jinja2
+pydantic
+confluent-kafka
+pathway
