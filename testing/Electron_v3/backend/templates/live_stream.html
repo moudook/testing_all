@@ -3,44 +3,139 @@
 <head>
     <title>Live Stream</title>
     <style>
-        body { background: #111; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
-        video { width: 80%; max-width: 1000px; border: 1px solid #333; margin-top: 20px; }
-        .status { margin-top: 10px; color: #888; }
+        body { 
+            background: #111; 
+            color: white; 
+            font-family: sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 20px;
+        }
+        video { 
+            width: 90%; 
+            max-width: 1200px; 
+            border: 2px solid #333; 
+            margin-top: 20px; 
+            background: #000;
+        }
+        .status { 
+            margin-top: 15px; 
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .connected { background: #1a4d2e; color: #4ade80; }
+        .disconnected { background: #4d1a1a; color: #ff6b6b; }
+        .waiting { background: #4d4d1a; color: #ffd93d; }
+        .info {
+            margin-top: 10px;
+            color: #888;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
     <h1>Live Stream: {{ session_id }}</h1>
     <video id="videoPlayer" controls autoplay muted></video>
-    <div class="status" id="status">Connecting...</div>
+    <div class="status waiting" id="status">Connecting...</div>
+    <div class="info" id="info">Waiting for video chunks...</div>
 
     <script>
         const video = document.getElementById('videoPlayer');
         const status = document.getElementById('status');
+        const info = document.getElementById('info');
         const mediaSource = new MediaSource();
         video.src = URL.createObjectURL(mediaSource);
 
-        mediaSource.addEventListener('sourceopen', () => {
-            const sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp9"');
-            const ws = new WebSocket(`ws://${window.location.host}/stream/live/screen`);
-            
-            ws.binaryType = 'arraybuffer';
+        let sourceBuffer = null;
+        let queue = [];
+        let chunkCount = 0;
 
-            ws.onopen = () => {
-                status.textContent = "Connected";
-            };
-
-            ws.onmessage = (event) => {
-                if (sourceBuffer.updating || mediaSource.readyState !== 'open') return;
+        function processQueue() {
+            if (queue.length > 0 && sourceBuffer && !sourceBuffer.updating && mediaSource.readyState === 'open') {
+                const chunk = queue.shift();
                 try {
-                    sourceBuffer.appendBuffer(event.data);
+                    sourceBuffer.appendBuffer(chunk);
+                    chunkCount++;
+                    info.textContent = `Received ${chunkCount} chunks | Queue: ${queue.length}`;
                 } catch (e) {
-                    console.error(e);
+                    console.error('Error appending buffer:', e);
+                    info.textContent = `Error: ${e.message}`;
                 }
-            };
+            }
+        }
 
-            ws.onclose = () => {
-                status.textContent = "Disconnected";
-            };
+        mediaSource.addEventListener('sourceopen', () => {
+            console.log('MediaSource opened');
+            try {
+                sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp9"');
+                
+                sourceBuffer.addEventListener('updateend', () => {
+                    processQueue();
+                });
+
+                sourceBuffer.addEventListener('error', (e) => {
+                    console.error('SourceBuffer error:', e);
+                    info.textContent = 'SourceBuffer error occurred';
+                });
+
+                const ws = new WebSocket(`ws://${window.location.host}/stream/live/screen`);
+                ws.binaryType = 'arraybuffer';
+
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    status.textContent = 'Connected - Streaming';
+                    status.className = 'status connected';
+                    info.textContent = 'Waiting for video chunks...';
+                };
+
+                ws.onmessage = (event) => {
+                    if (event.data.byteLength > 0) {
+                        queue.push(event.data);
+                        processQueue();
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    status.textContent = 'Connection Error';
+                    status.className = 'status disconnected';
+                    info.textContent = 'WebSocket error occurred';
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket closed');
+                    status.textContent = 'Disconnected';
+                    status.className = 'status disconnected';
+                    info.textContent = `Stream ended. Received ${chunkCount} total chunks.`;
+                };
+            } catch (e) {
+                console.error('Error setting up MediaSource:', e);
+                status.textContent = 'Setup Error';
+                status.className = 'status disconnected';
+                info.textContent = `Error: ${e.message}`;
+            }
+        });
+
+        mediaSource.addEventListener('sourceclose', () => {
+            console.log('MediaSource closed');
+        });
+
+        mediaSource.addEventListener('error', (e) => {
+            console.error('MediaSource error:', e);
+            status.textContent = 'MediaSource Error';
+            status.className = 'status disconnected';
+        });
+
+        // Log video player events
+        video.addEventListener('loadstart', () => console.log('Video: loadstart'));
+        video.addEventListener('loadedmetadata', () => console.log('Video: loadedmetadata'));
+        video.addEventListener('canplay', () => console.log('Video: canplay'));
+        video.addEventListener('playing', () => console.log('Video: playing'));
+        video.addEventListener('error', (e) => {
+            console.error('Video error:', e);
+            info.textContent = `Video error: ${video.error?.message || 'Unknown'}`;
         });
     </script>
 </body>

@@ -34,7 +34,7 @@ def streaming_pipeline():
         rdkafka_settings={
             "bootstrap.servers": "localhost:9092",
         },
-        topic="video_live_out",
+        topic_name="video_live_out",
         format="json"
     )
 

@@ -24,89 +24,154 @@ export default function Recorder() {
     }, []);
 
     const startRecording = async () => {
-        if (!selectedSourceId) return alert('Select a screen source first');
+        if (!selectedSourceId) {
+            alert('Please select a screen source first');
+            return;
+        }
 
         try {
             // Notify backend to connect WebSockets
             window.mediaAPI.startStream();
 
+            let screenStream: MediaStream | null = null;
+            let systemAudioStreamOnly: MediaStream | null = null;
+            let micStream: MediaStream | null = null;
+
             // 1. Screen Stream
-            const screenStream = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: selectedSourceId,
-                    }
-                } as any
-            });
-            screenStreamRef.current = screenStream;
+            try {
+                screenStream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: selectedSourceId,
+                        }
+                    } as any
+                });
+                screenStreamRef.current = screenStream;
+                console.log('[Recorder] Screen stream captured successfully');
+            } catch (err) {
+                console.error("[Recorder] Failed to capture screen:", err);
+                alert("Failed to capture screen. The selected source may not be capturable. Please try another source.");
+                window.mediaAPI.stopStream();
+                return;
+            }
 
             // 2. System Audio Stream (Loopback)
-            const systemStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: selectedSourceId
-                    }
-                } as any,
-                video: {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: selectedSourceId,
-                        maxWidth: 1,
-                        maxHeight: 1
-                    }
-                } as any
-            });
-            const systemAudioTrack = systemStream.getAudioTracks()[0];
-            const systemAudioStreamOnly = new MediaStream([systemAudioTrack]);
-            systemStreamRef.current = systemAudioStreamOnly;
-
+            try {
+                const systemStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: selectedSourceId
+                        }
+                    } as any,
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: selectedSourceId,
+                            maxWidth: 1,
+                            maxHeight: 1
+                        }
+                    } as any
+                });
+                const systemAudioTrack = systemStream.getAudioTracks()[0];
+                if (systemAudioTrack) {
+                    systemAudioStreamOnly = new MediaStream([systemAudioTrack]);
+                    systemStreamRef.current = systemAudioStreamOnly;
+                    console.log('[Recorder] System audio captured successfully');
+                } else {
+                    console.warn('[Recorder] No system audio track available');
+                }
+                // Stop the dummy video track
+                systemStream.getVideoTracks().forEach(t => t.stop());
+            } catch (err) {
+                console.warn("[Recorder] Failed to capture system audio (this is optional):", err);
+                // Continue without system audio
+            }
 
             // 3. Mic Stream
-            const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            micStreamRef.current = micStream;
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                micStreamRef.current = micStream;
+                console.log('[Recorder] Microphone captured successfully');
+            } catch (err) {
+                console.warn("[Recorder] Failed to capture microphone (this is optional):", err);
+                // Continue without mic
+            }
+
+            // Validate we have at least screen stream
+            if (!screenStream) {
+                alert("Failed to start recording: No screen stream available");
+                window.mediaAPI.stopStream();
+                return;
+            }
 
             // Start Recorders
             const options = { mimeType: 'video/webm; codecs=vp9' };
             const audioOptions = { mimeType: 'audio/webm; codecs=opus' };
 
             // Screen Recorder
-            const screenRecorder = new MediaRecorder(screenStream, options);
-            screenRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    e.data.arrayBuffer().then(buffer => window.mediaAPI.sendScreenChunk(buffer));
-                }
-            };
-            screenRecorder.start(1000); // 1 second chunks
-            screenRecorderRef.current = screenRecorder;
+            try {
+                const screenRecorder = new MediaRecorder(screenStream, options);
+                screenRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        e.data.arrayBuffer().then(buffer => window.mediaAPI.sendScreenChunk(buffer));
+                    }
+                };
+                screenRecorder.start(1000); // 1 second chunks
+                screenRecorderRef.current = screenRecorder;
+                console.log('[Recorder] Screen recorder started');
+            } catch (err) {
+                console.error("[Recorder] Failed to start screen recorder:", err);
+                throw err;
+            }
 
-            // Mic Recorder
-            const micRecorder = new MediaRecorder(micStream, audioOptions);
-            micRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    e.data.arrayBuffer().then(buffer => window.mediaAPI.sendMicChunk(buffer));
+            // Mic Recorder (optional)
+            if (micStream) {
+                try {
+                    const micRecorder = new MediaRecorder(micStream, audioOptions);
+                    micRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0) {
+                            e.data.arrayBuffer().then(buffer => window.mediaAPI.sendMicChunk(buffer));
+                        }
+                    };
+                    micRecorder.start(1000);
+                    micRecorderRef.current = micRecorder;
+                    console.log('[Recorder] Mic recorder started');
+                } catch (err) {
+                    console.warn("[Recorder] Failed to start mic recorder:", err);
                 }
-            };
-            micRecorder.start(1000);
-            micRecorderRef.current = micRecorder;
+            }
 
-            // System Audio Recorder
-            const systemRecorder = new MediaRecorder(systemAudioStreamOnly, audioOptions);
-            systemRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    e.data.arrayBuffer().then(buffer => window.mediaAPI.sendSystemChunk(buffer));
+            // System Audio Recorder (optional)
+            if (systemAudioStreamOnly) {
+                try {
+                    const systemRecorder = new MediaRecorder(systemAudioStreamOnly, audioOptions);
+                    systemRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0) {
+                            e.data.arrayBuffer().then(buffer => window.mediaAPI.sendSystemChunk(buffer));
+                        }
+                    };
+                    systemRecorder.start(1000);
+                    systemRecorderRef.current = systemRecorder;
+                    console.log('[Recorder] System audio recorder started');
+                } catch (err) {
+                    console.warn("[Recorder] Failed to start system audio recorder:", err);
                 }
-            };
-            systemRecorder.start(1000);
-            systemRecorderRef.current = systemRecorder;
+            }
 
             setIsRecording(true);
 
         } catch (err) {
-            console.error("Error starting recording:", err);
+            console.error("[Recorder] Error starting recording:", err);
             alert("Failed to start recording: " + err);
+
+            // Cleanup on error
+            screenStreamRef.current?.getTracks().forEach(t => t.stop());
+            micStreamRef.current?.getTracks().forEach(t => t.stop());
+            systemStreamRef.current?.getTracks().forEach(t => t.stop());
+            window.mediaAPI.stopStream();
         }
     };
 

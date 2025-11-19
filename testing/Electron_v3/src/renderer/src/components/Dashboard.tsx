@@ -50,8 +50,8 @@ export default function Dashboard({ onEdit, onCreate }: Props) {
                                 </td>
                                 <td className="p-4">
                                     <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${startup.status === 'invested' ? 'bg-green-900 text-green-300' :
-                                            startup.status === 'passed' ? 'bg-red-900 text-red-300' :
-                                                'bg-blue-900 text-blue-300'
+                                        startup.status === 'passed' ? 'bg-red-900 text-red-300' :
+                                            'bg-blue-900 text-blue-300'
                                         }`}>
                                         {startup.status}
                                     </span>
