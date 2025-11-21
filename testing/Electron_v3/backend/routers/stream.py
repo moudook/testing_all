@@ -135,3 +135,7 @@ async def live_endpoint(websocket: WebSocket, stream_type: str):
 @router.get("/live/{session_id}", response_class=HTMLResponse)
 async def get_live_page(request: Request, session_id: str):
     return templates.TemplateResponse("live_stream.html", {"request": request, "session_id": session_id})
+
+@router.get("/audio/{session_id}", response_class=HTMLResponse)
+async def get_audio_page(request: Request, session_id: str):
+    return templates.TemplateResponse("audio_stream.html", {"request": request, "session_id": session_id})

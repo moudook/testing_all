@@ -162,8 +162,97 @@ Deploy the generated installer/executable together with the backend service (run
 | Screen source dropdown is slow | DesktopCapturer fetching full‑size thumbnails | Thumbnail size reduced to 300×300 and extra filters added (see `screenRecorder.ts`) |
 | Chat window not draggable | Missing drag handlers | Updated `Chatbot.tsx` now includes mouse‑drag logic |
 | Overlay stays after stop | `isRecording` flag not toggled | Confirm `stopRecording` sets `setIsRecording(false)` (already fixed) |
+| `CHUNK_DEMUXER_ERROR_APPEND_FAILED` | MediaSource missing init segment | Backend now caches and sends initialization segments automatically |
+| "Source is not capturable" errors | Non-capturable system sources shown | Enhanced filtering excludes nvidia/AMD drivers, overlays, system UI |
 
 If you encounter other issues, check the console logs in both the Electron devtools and the FastAPI terminal.
+
+---
+
+## Live Streaming
+
+The application features **real-time live streaming** for both video and audio with a robust WebSocket-based architecture.
+
+### Stream Endpoints
+
+#### Video Stream
+- **URL**: `http://localhost:8000/stream/live/<session_id>`
+- **Features**:
+  - Real-time screen capture streaming
+  - MediaSource API integration with proper buffer management
+  - Initialization segment caching for seamless playback
+  - Visual status indicators (Connected/Disconnected/Waiting)
+  - Chunk counter and queue size metrics
+  - WebM format with VP9 codec
+
+#### Microphone Audio Stream
+- **URL**: `http://localhost:8000/stream/audio/<session_id>`
+- **Features**:
+  - Real-time microphone audio streaming
+  - Live audio waveform visualization
+  - Audio player with standard HTML5 controls
+  - Metrics dashboard (chunks received, queue size, data rate)
+  - WebM format with Opus codec
+
+### Architecture
+
+```mermaid
+graph LR
+    A[Electron App] -->|WebSocket| B[FastAPI Backend]
+    B -->|Broadcast| C[Live Video Viewer]
+    B -->|Broadcast| D[Audio Stream Viewer]
+    B -->|Kafka| E[Pathway Pipeline]
+    E -->|Analytics| F[MongoDB]
+```
+
+#### Upload Flow
+1. Electron app captures screen/audio via `MediaRecorder`
+2. Chunks sent to `/stream/upload/{stream_type}` WebSocket
+3. Backend caches the **first chunk** (initialization segment)
+4. Backend broadcasts chunks to all connected viewers
+5. Optionally sends to Kafka for Pathway processing
+
+#### Playback Flow
+1. Viewer connects to `/stream/live/{stream_type}` WebSocket
+2. Receives cached initialization segment immediately
+3. Receives subsequent media chunks in real-time
+4. MediaSource API handles buffering and playback
+5. Visualization updates (for audio streams)
+
+### Key Features
+
+- **Initialization Segment Caching**: Ensures new viewers can join mid-stream
+- **Queue Management**: Handles backpressure when SourceBuffer is busy
+- **Graceful Degradation**: Optional streams (mic, system audio) don't block recording
+- **Error Handling**: Comprehensive logging and user-friendly error messages
+- **Metrics**: Real-time monitoring of chunks, queue size, and data rates
+- **Auto-Cleanup**: Disconnected clients automatically removed
+
+### Testing the Streams
+
+1. **Start the backend**:
+   ```powershell
+   docker-compose up -d
+   cd backend
+   uvicorn main:app --reload
+   ```
+
+2. **Start the Electron app**:
+   ```powershell
+   npm start
+   ```
+
+3. **Begin recording** in the Electron UI
+
+4. **View the streams**:
+   - Video: Open `http://localhost:8000/stream/live/test` in your browser
+   - Audio: Open `http://localhost:8000/stream/audio/test` in your browser
+
+You should see:
+- ✅ Connection status change to "Connected - Streaming"
+- ✅ Chunk counter incrementing
+- ✅ Video/audio playback (may take a few seconds to buffer)
+- ✅ For audio: waveform visualization updating in real-time
 
 ---
 
